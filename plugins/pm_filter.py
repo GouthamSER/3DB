@@ -15,7 +15,7 @@ from pyrogram import Client, filters, enums
 from pyrogram.errors import FloodWait, UserIsBlocked, MessageNotModified, PeerIdInvalid
 from utils import get_size, is_subscribed, get_poster, search_gagala, temp, get_settings, save_group_settings
 from database.users_chats_db import db
-from database.ia_filterdb import Media, Media2, get_file_details, get_search_results, get_bad_files, db as clientDB, db2 as clientDB2
+from database.ia_filterdb import Media, Media2, Media3, get_file_details, get_search_results, db as clientDB, db2 as clientDB2, db3 as clientDB3
 from database.filters_mdb import (
     del_all,
     find_filter,
@@ -521,55 +521,121 @@ async def cb_handler(client: Client, query: CallbackQuery):
             parse_mode=enums.ParseMode.HTML
         )
     elif query.data == "stats":
-        buttons = [[
+    # Buttons
+    buttons = [
+        [
             InlineKeyboardButton('👩‍🦯 Back', callback_data='help'),
-            InlineKeyboardButton('♻️', callback_data='rfrsh')
-        ]]
-        reply_markup = InlineKeyboardMarkup(buttons)
-        #primary db
-        totalp = await Media.count_documents()
-        #secondary db
-        totalsec = await Media2.count_documents()
-        #users and chats
-        users = await db.total_users_count()
-        chats = await db.total_chat_count()
-        #primary db
-        stats = await clientDB.command('dbStats')
-        used_dbSize = (stats['dataSize']/(1024*1024))+(stats['indexSize']/(1024*1024))
-        free_dbSize = 512-used_dbSize
-        #secondary db
-        stats2 = await clientDB2.command('dbStats')
-        used_dbSize2 = (stats2['dataSize']/(1024*1024))+(stats2['indexSize']/(1024*1024))
-        free_dbSize2 = 512-used_dbSize2
+            InlineKeyboardButton('♻️ Refresh', callback_data='rfrsh')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(buttons)
+
+    try:
+        # Primary DB
+        total_primary = await Media.count_documents()
+        stats_primary = await clientDB.command('dbStats')
+        used_primary = (stats_primary['dataSize'] + stats_primary['indexSize']) / (1024 * 1024)
+        free_primary = max(0, 512 - used_primary)  # Ensure free size is non-negative
+
+        # Secondary DB
+        total_secondary = await Media2.count_documents()
+        stats_secondary = await clientDB2.command('dbStats')
+        used_secondary = (stats_secondary['dataSize'] + stats_secondary['indexSize']) / (1024 * 1024)
+        free_secondary = max(0, 512 - used_secondary)
+
+        # Third DB
+        total_third = await Media3.count_documents()
+        stats_third = await clientDB3.command('dbStats')
+        used_third = (stats_third['dataSize'] + stats_third['indexSize']) / (1024 * 1024)
+        free_third = max(0, 512 - used_third)
+
+        # Users and Chats
+        total_users = await db.total_users_count()
+        total_chats = await db.total_chat_count()
+
+        # Format and send the message
         await query.message.edit_text(
-            text=script.STATUS_TXT.format((int(totalp)+int(totalsec)), users, chats, totalp, round(used_dbSize, 2), round(free_dbSize, 2), totalsec, round(used_dbSize2, 2), round(free_dbSize2, 2)),
+            text=script.STATUS_TXT.format(
+                total_primary + total_secondary + total_third,  # Total records
+                total_users,  # Total users
+                total_chats,  # Total chats
+                total_primary,  # Primary DB records
+                round(used_primary, 2),  # Primary DB used size
+                round(free_primary, 2),  # Primary DB free size
+                total_secondary,  # Secondary DB records
+                round(used_secondary, 2),  # Secondary DB used size
+                round(free_secondary, 2),  # Secondary DB free size
+                total_third,  # Third DB records
+                round(used_third, 2),  # Third DB used size
+                round(free_third, 2)  # Third DB free size
+            ),
             reply_markup=reply_markup,
             parse_mode=enums.ParseMode.HTML
         )
-    elif query.data == "rfrsh":
-        await query.answer("Fetching MongoDb DataBase")
-        buttons = [[
-            InlineKeyboardButton('👩‍🦯 Back', callback_data='help'),
-            InlineKeyboardButton('♻️', callback_data='rfrsh')
-        ]]
-        reply_markup = InlineKeyboardMarkup(buttons)
-        #primary db
-        totalp = await Media.count_documents()
-        #secondary db
-        totalsec = await Media2.count_documents()
-        #users and chats
-        users = await db.total_users_count()
-        chats = await db.total_chat_count()
-        #primary db
-        stats = await clientDB.command('dbStats')
-        used_dbSize = (stats['dataSize']/(1024*1024))+(stats['indexSize']/(1024*1024))
-        free_dbSize = 512-used_dbSize
-        #secondary db
-        stats2 = await clientDB2.command('dbStats')
-        used_dbSize2 = (stats2['dataSize']/(1024*1024))+(stats2['indexSize']/(1024*1024))
-        free_dbSize2 = 512-used_dbSize2
+    except Exception as e:
+        logger.exception("Error while fetching stats", exc_info=True)
         await query.message.edit_text(
-            text=script.STATUS_TXT.format((int(totalp)+int(totalsec)), users, chats, totalp, round(used_dbSize, 2), round(free_dbSize, 2), totalsec, round(used_dbSize2, 2), round(free_dbSize2, 2)),
+            text="An error occurred while fetching database statistics. Please try again later.",
+            reply_markup=reply_markup,
+            parse_mode=enums.ParseMode.HTML
+        )
+        
+    elif query.data == "stats":
+    # Buttons
+    buttons = [
+        [
+            InlineKeyboardButton('👩‍🦯 Back', callback_data='help'),
+            InlineKeyboardButton('♻️ Refresh', callback_data='rfrsh')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(buttons)
+
+    try:
+        # Primary DB
+        total_primary = await Media.count_documents()
+        stats_primary = await clientDB.command('dbStats')
+        used_primary = (stats_primary['dataSize'] + stats_primary['indexSize']) / (1024 * 1024)
+        free_primary = max(0, 512 - used_primary)  # Ensure free size is non-negative
+
+        # Secondary DB
+        total_secondary = await Media2.count_documents()
+        stats_secondary = await clientDB2.command('dbStats')
+        used_secondary = (stats_secondary['dataSize'] + stats_secondary['indexSize']) / (1024 * 1024)
+        free_secondary = max(0, 512 - used_secondary)
+
+        # Third DB
+        total_third = await Media3.count_documents()
+        stats_third = await clientDB3.command('dbStats')
+        used_third = (stats_third['dataSize'] + stats_third['indexSize']) / (1024 * 1024)
+        free_third = max(0, 512 - used_third)
+
+        # Users and Chats
+        total_users = await db.total_users_count()
+        total_chats = await db.total_chat_count()
+
+        # Format and send the message
+        await query.message.edit_text(
+            text=script.STATUS_TXT.format(
+                total_primary + total_secondary + total_third,  # Total records
+                total_users,  # Total users
+                total_chats,  # Total chats
+                total_primary,  # Primary DB records
+                round(used_primary, 2),  # Primary DB used size
+                round(free_primary, 2),  # Primary DB free size
+                total_secondary,  # Secondary DB records
+                round(used_secondary, 2),  # Secondary DB used size
+                round(free_secondary, 2),  # Secondary DB free size
+                total_third,  # Third DB records
+                round(used_third, 2),  # Third DB used size
+                round(free_third, 2)  # Third DB free size
+            ),
+            reply_markup=reply_markup,
+            parse_mode=enums.ParseMode.HTML
+        )
+    except Exception as e:
+        logger.exception("Error while fetching stats", exc_info=True)
+        await query.message.edit_text(
+            text="An error occurred while fetching database statistics. Please try again later.",
             reply_markup=reply_markup,
             parse_mode=enums.ParseMode.HTML
         )
