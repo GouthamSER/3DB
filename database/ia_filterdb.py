@@ -195,13 +195,27 @@ async def get_search_results(chat_id, query, file_type=None, max_results=10, off
 
 
 async def get_file_details(query):
+    """
+    Retrieve file details for a given file_id from the databases.
+    """
     filter = {'file_id': query}
+
+    # Search in primary database
     cursor = Media.find(filter)
     filedetails = await cursor.to_list(length=1)
+
     if not filedetails:
+        # Search in secondary database
         cursor2 = Media2.find(filter)
         filedetails = await cursor2.to_list(length=1)
+
+        if not filedetails:
+            # Search in tertiary database
+            cursor3 = Media3.find(filter)
+            filedetails = await cursor3.to_list(length=1)
+
     return filedetails
+
 
 def encode_file_id(s: bytes) -> str:
     r = b""
