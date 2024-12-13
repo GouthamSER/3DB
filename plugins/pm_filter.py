@@ -568,11 +568,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             reply_markup=reply_markup,
             parse_mode=enums.ParseMode.HTML
         )
-        await query.message.edit_text(
-            text="An error occurred while fetching database statistics. Please try again later.",
-            reply_markup=reply_markup,
-            parse_mode=enums.ParseMode.HTML
-        )  
+        
     elif query.data == "rfrsh":
     # Buttons
         buttons = [[
@@ -621,11 +617,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             reply_markup=reply_markup,
             parse_mode=enums.ParseMode.HTML
         )
-        await query.message.edit_text(
-            text="An error occurred while fetching database statistics. Please try again later.",
-            reply_markup=reply_markup,
-            parse_mode=enums.ParseMode.HTML
-        )
+        
     elif query.data.startswith("setgs"):
         ident, set_type, status, grp_id = query.data.split("#")
         grpid = await active_connection(str(query.from_user.id))
