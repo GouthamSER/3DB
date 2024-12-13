@@ -55,14 +55,14 @@ class Bot(Client):
         stats = await clientDB.command('dbStats')
         free_dbSize = round(512 - ((stats['dataSize'] / (1024 * 1024)) + (stats['indexSize'] / (1024 * 1024))), 2)
         
-        if SECONDDB_URI and free_dbSize < 10:
+        if SECONDDB_URI and free_dbSize < 110:
             # Check free space in SECONDDB
-            second_db_client = ClientDB(SECONDDB_URI)
+            second_db_client = clientDB(SECONDDB_URI)
             second_db_stats = await second_db_client.command('dbStats')
             second_free_dbSize = round(512 - ((second_db_stats['dataSize'] / (1024 * 1024)) + 
                                               (second_db_stats['indexSize'] / (1024 * 1024))), 2)
                                               
-            if THIRDDB_URI and second_free_dbSize < 10:
+            if THIRDDB_URI and second_free_dbSize < 50:
                 tempDict["indexDB"] = THIRDDB_URI
                 logging.info(f"Both Primary and Secondary DBs have less than 10MB free. Using Third DB.")
             elif not THIRDDB_URI:
@@ -72,7 +72,7 @@ class Bot(Client):
                 tempDict["indexDB"] = SECONDDB_URI
                 logging.info(f"Primary DB is low on space. Using Secondary DB with {second_free_dbSize} MB free.")
         
-        elif SECONDDB_URI is None and THIRDDB_URI is not None and free_dbSize < 10:
+        elif SECONDDB_URI is None and THIRDDB_URI is not None and free_dbSize < 40:
             tempDict["indexDB"] = THIRDDB_URI
             logging.info(f"Primary DB is low on space, and Secondary DB is unavailable. Using Third DB.")
         
