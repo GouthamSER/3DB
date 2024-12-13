@@ -6,7 +6,7 @@ from Script import script
 from pyrogram import Client, filters, enums
 from pyrogram.errors import ChatAdminRequired, FloodWait
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from database.ia_filterdb import Media, Media2, get_file_details, unpack_new_file_id
+from database.ia_filterdb import Media, Media2, Media3, get_file_details, unpack_new_file_id
 from database.users_chats_db import db
 from info import CHANNELS, ADMINS, AUTH_CHANNEL, LOG_CHANNEL, PICS, BATCH_FILE_CAPTION, CUSTOM_FILE_CAPTION, PROTECT_CONTENT
 from utils import get_settings, get_size, is_subscribed, save_group_settings, temp
@@ -306,25 +306,34 @@ async def delete(bot, message):
         return
     
     file_id, file_ref = unpack_new_file_id(media.file_id)
+    
+    # Check in Primary DB (Media)
     if await Media.count_documents({'file_id': file_id}):
-        result = await Media.collection.delete_one({
-            '_id': file_id,
-        })
+        result = await Media.collection.delete_one({'_id': file_id})
+    # Check in Secondary DB (Media2)
+    elif await Media2.count_documents({'file_id': file_id}):
+        result = await Media2.collection.delete_one({'_id': file_id})
+    # Check in Third DB (Media3)
+    elif await Media3.count_documents({'file_id': file_id}):
+        result = await Media3.collection.delete_one({'_id': file_id})
     else:
-        result = await Media2.collection.delete_one({
-            '_id': file_id,
-        })
-    if result.deleted_count:
+        result = None
+
+    if result and result.deleted_count:
         await msg.edit('Fɪʟᴇ ɪs sᴜᴄᴄᴇssғᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ ғʀᴏᴍ ᴅᴀᴛᴀʙᴀsᴇ')
     else:
+        # If not found by file_id, try by file_name, file_size, and mime_type
         file_name = re.sub(r"(_|\-|\.|\+)", " ", str(media.file_name))
+        
+        # Try in Primary DB (Media)
         result = await Media.collection.delete_many({
             'file_name': file_name,
             'file_size': media.file_size,
             'mime_type': media.mime_type
-            })
+        })
         if result.deleted_count:
             await msg.edit('Fɪʟᴇ ɪs sᴜᴄᴄᴇssғᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ ғʀᴏᴍ ᴅᴀᴛᴀʙᴀsᴇ')
+        # Try in Secondary DB (Media2)
         else:
             result = await Media2.collection.delete_many({
                 'file_name': file_name,
@@ -333,26 +342,18 @@ async def delete(bot, message):
             })
             if result.deleted_count:
                 await msg.edit('Fɪʟᴇ ɪs sᴜᴄᴄᴇssғᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ ғʀᴏᴍ ᴅᴀᴛᴀʙᴀsᴇ')
+            # Try in Third DB (Media3)
             else:
-                # files indexed before https://github.com/EvamariaTG/EvaMaria/commit/f3d2a1bcb155faf44178e5d7a685a1b533e714bf#diff-86b613edf1748372103e94cacff3b578b36b698ef9c16817bb98fe9ef22fb669R39 
-                # have original file name.
-                result = await Media.collection.delete_many({
-                    'file_name': media.file_name,
+                result = await Media3.collection.delete_many({
+                    'file_name': file_name,
                     'file_size': media.file_size,
                     'mime_type': media.mime_type
                 })
                 if result.deleted_count:
                     await msg.edit('Fɪʟᴇ ɪs sᴜᴄᴄᴇssғᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ ғʀᴏᴍ ᴅᴀᴛᴀʙᴀsᴇ')
                 else:
-                    result = await Media2.collection.delete_many({
-                        'file_name': media.file_name,
-                        'file_size': media.file_size,
-                        'mime_type': media.mime_type
-                    })
-                    if result.deleted_count:
-                        await msg.edit('Fɪʟᴇ ɪs sᴜᴄᴄᴇssғᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ ғʀᴏᴍ ᴅᴀᴛᴀʙᴀsᴇ')
-                    else:
-                        await msg.edit('Fɪʟᴇ ɴᴏᴛ ғᴏᴜɴᴅ ɪɴ ᴅᴀᴛᴀʙᴀsᴇ')
+                    await msg.edit('Fɪʟᴇ ɴᴏᴛ ғᴏᴜɴᴅ ɪɴ ᴅᴀᴛᴀʙᴀsᴇ')
+                    
 
 @Client.on_message(filters.command('deleteall') & filters.user(ADMINS))
 async def delete_all_index(bot, message):
@@ -378,11 +379,14 @@ async def delete_all_index(bot, message):
 
 @Client.on_callback_query(filters.regex(r'^autofilter_delete'))
 async def delete_all_index_confirm(bot, message):
+    # Drop all collections from the three databases
     await Media.collection.drop()
     await Media2.collection.drop()
+    await Media3.collection.drop()  # Drop from third database (Media3)
+    
+    # Send confirmation message to the user
     await message.answer('Piracy Is Crime')
     await message.message.edit('Succesfully Deleted All The Indexed Files.')
-
 
 @Client.on_message(filters.command('settings'))
 async def settings(client, message):
