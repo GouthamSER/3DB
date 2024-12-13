@@ -31,13 +31,16 @@ from aiohttp import web as webserver
 PORT_CODE = environ.get("PORT", "8080")
 
 class Bot(Client):
+
     def __init__(self):
         super().__init__(
-            name="my_bot",  # Replace "my_bot" with your desired session name
-            session_name=SESSION,
+            name=SESSION,
             api_id=API_ID,
             api_hash=API_HASH,
-            bot_token=BOT_TOKEN
+            bot_token=BOT_TOKEN,
+            workers=50,
+            plugins={"root": "plugins"},
+            sleep_threshold=5,
         )
     async def start(self):
         b_users, b_chats = await db.get_banned()
