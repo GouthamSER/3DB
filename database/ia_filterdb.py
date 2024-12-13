@@ -8,7 +8,7 @@ from pymongo.errors import DuplicateKeyError
 from umongo import Instance, Document, fields
 from motor.motor_asyncio import AsyncIOMotorClient
 from marshmallow.exceptions import ValidationError
-from info import DATABASE_URI, DATABASE_NAME, COLLECTION_NAME, USE_CAPTION_FILTER, MAX_B_TN, SECONDDB_URI
+from info import DATABASE_URI, DATABASE_NAME, COLLECTION_NAME, USE_CAPTION_FILTER, MAX_B_TN, SECONDDB_URI, THIRDDB_URI
 from utils import get_settings, save_group_settings
 from sample_info import tempDict 
 
@@ -56,15 +56,41 @@ class Media2(Document):
         indexes = ('$file_name', )
         collection_name = COLLECTION_NAME
 
+# Tertiary database
+client3 = AsyncIOMotorClient(THIRDDB_URI)
+db3 = client3[DATABASE_NAME]
+instance3 = Instance.from_db(db3)
+
+@instance3.register
+class Media3(Document):
+    file_id = fields.StrField(attribute='_id')
+    file_ref = fields.StrField(allow_none=True)
+    file_name = fields.StrField(required=True)
+    file_size = fields.IntField(required=True)
+    file_type = fields.StrField(allow_none=True)
+    mime_type = fields.StrField(allow_none=True)
+    caption = fields.StrField(allow_none=True)
+
+    class Meta:
+        indexes = ('$file_name',)
+        collection_name = COLLECTION_NAME
+
 async def choose_mediaDB():
     """This Function chooses which database to use based on the value of indexDB key in the dict tempDict."""
     global saveMedia
     if tempDict['indexDB'] == DATABASE_URI:
         logger.info("Using first db (Media)")
         saveMedia = Media
-    else:
+    elif tempDict['indexDB'] == SECONDDB_URI:
         logger.info("Using second db (Media2)")
         saveMedia = Media2
+    elif tempDict['indexDB'] == THIRDDB_URI:
+        logger.info("Using third db (Media3)")
+        saveMedia = Media3
+    else:
+        logger.error("No valid database URI found in tempDict['indexDB']")
+        saveMedia = None
+        
 
 async def save_file(media):
     """Save file in database"""
@@ -101,36 +127,16 @@ async def save_file(media):
             logger.info(f'{getattr(media, "file_name", "NO_FILE")} is saved to database')
             return True, 1
 
-
-
 async def get_search_results(chat_id, query, file_type=None, max_results=10, offset=0, filter=False):
     """For given query return (results, next_offset)"""
-    if chat_id is not None:
-        settings = await get_settings(int(chat_id))
-        try:
-            if settings['max_btn']:
-                max_results = 10
-            else:
-                max_results = int(MAX_B_TN)
-        except KeyError:
-            await save_group_settings(int(chat_id), 'max_btn', False)
-            settings = await get_settings(int(chat_id))
-            if settings['max_btn']:
-                max_results = 10
-            else:
-                max_results = int(MAX_B_TN)
     query = query.strip()
-    #if filter:
-        #better ?
-        #query = query.replace(' ', r'(\s|\.|\+|\-|_)')
-        #raw_pattern = r'(\s|_|\-|\.|\+)' + query + r'(\s|_|\-|\.|\+)'
     if not query:
         raw_pattern = '.'
     elif ' ' not in query:
         raw_pattern = r'(\b|[\.\+\-_])' + query + r'(\b|[\.\+\-_])'
     else:
         raw_pattern = query.replace(' ', r'.*[\s\.\+\-_()]')
-    
+
     try:
         regex = re.compile(raw_pattern, flags=re.IGNORECASE)
     except:
@@ -144,75 +150,49 @@ async def get_search_results(chat_id, query, file_type=None, max_results=10, off
     if file_type:
         filter['file_type'] = file_type
 
-    total_results = ((await Media.count_documents(filter))+(await Media2.count_documents(filter)))
+    total_results = (
+        (await Media.count_documents(filter)) +
+        (await Media2.count_documents(filter)) +
+        (await Media3.count_documents(filter))
+    )
 
-    #verifies max_results is an even number or not
-    if max_results%2 != 0: #if max_results is an odd number, add 1 to make it an even number
-        logger.info(f"Since max_results is an odd number ({max_results}), bot will use {max_results+1} as max_results to make it even.")
+    # Adjust max_results to be even
+    if max_results % 2 != 0:
         max_results += 1
 
-    cursor = Media.find(filter)
-    cursor2 = Media2.find(filter)
-    # Sort by recent
-    cursor.sort('$natural', -1)
-    cursor2.sort('$natural', -1)
-    # Slice files according to offset and max results
-    cursor2.skip(offset).limit(max_results)
-    # Get list of files
-    fileList2 = await cursor2.to_list(length=max_results)
-    if len(fileList2)<max_results:
-        next_offset = offset+len(fileList2)
-        cursorSkipper = (next_offset-(await Media2.count_documents(filter)))
-        cursor.skip(cursorSkipper if cursorSkipper>=0 else 0).limit(max_results-len(fileList2))
-        fileList1 = await cursor.to_list(length=(max_results-len(fileList2)))
-        files = fileList2+fileList1
-        next_offset = next_offset + len(fileList1)
+    cursor1 = Media.find(filter).sort('$natural', -1)
+    cursor2 = Media2.find(filter).sort('$natural', -1)
+    cursor3 = Media3.find(filter).sort('$natural', -1)
+
+    # Offset and limit management across three DBs
+    cursor3.skip(offset).limit(max_results)
+    files3 = await cursor3.to_list(length=max_results)
+
+    if len(files3) < max_results:
+        next_offset = offset + len(files3)
+        cursor2.skip(next_offset - (await Media3.count_documents(filter))).limit(max_results - len(files3))
+        files2 = await cursor2.to_list(length=(max_results - len(files3)))
+        next_offset += len(files2)
+
+        if len(files3 + files2) < max_results:
+            cursor1.skip(next_offset - (await Media2.count_documents(filter)) - (await Media3.count_documents(filter))).limit(
+                max_results - len(files3 + files2)
+            )
+            files1 = await cursor1.to_list(length=(max_results - len(files3 + files2)))
+            files = files3 + files2 + files1
+            next_offset += len(files1)
+        else:
+            files = files3 + files2
     else:
-        files = fileList2
+        files = files3
         next_offset = offset + max_results
+
     if next_offset >= total_results:
         next_offset = ''
+
     return files, next_offset, total_results
-
-async def get_bad_files(query, file_type=None, filter=False):
-    """For given query return (results, next_offset)"""
-    query = query.strip()
-    #if filter:
-        #better ?
-        #query = query.replace(' ', r'(\s|\.|\+|\-|_)')
-        #raw_pattern = r'(\s|_|\-|\.|\+)' + query + r'(\s|_|\-|\.|\+)'
-    if not query:
-        raw_pattern = '.'
-    elif ' ' not in query:
-        raw_pattern = r'(\b|[\.\+\-_])' + query + r'(\b|[\.\+\-_])'
-    else:
-        raw_pattern = query.replace(' ', r'.*[\s\.\+\-_()]')
     
-    try:
-        regex = re.compile(raw_pattern, flags=re.IGNORECASE)
-    except:
-        return []
 
-    if USE_CAPTION_FILTER:
-        filter = {'$or': [{'file_name': regex}, {'caption': regex}]}
-    else:
-        filter = {'file_name': regex}
-
-    if file_type:
-        filter['file_type'] = file_type
-
-    cursor = Media.find(filter)
-    cursor2 = Media2.find(filter)
-    # Sort by recent
-    cursor.sort('$natural', -1)
-    cursor2.sort('$natural', -1)
-    # Get list of files
-    files = ((await cursor2.to_list(length=(await Media2.count_documents(filter))))+(await cursor.to_list(length=(await Media.count_documents(filter)))))
-
-    #calculate total results
-    total_results = len(files)
-
-    return files, total_results
 
 async def get_file_details(query):
     filter = {'file_id': query}
