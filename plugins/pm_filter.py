@@ -522,13 +522,11 @@ async def cb_handler(client: Client, query: CallbackQuery):
         )
     elif query.data == "stats":
     # Buttons
-    buttons = [[
+        buttons = [[
             InlineKeyboardButton('👩‍🦯 Back', callback_data='help'),
             InlineKeyboardButton('♻️ Refresh', callback_data='rfrsh')
-    ]]
-    reply_markup = InlineKeyboardMarkup(buttons)
-
-    try:
+        ]]
+        reply_markup = InlineKeyboardMarkup(buttons)
         # Primary DB
         total_primary = await Media.count_documents()
         stats_primary = await clientDB.command('dbStats')
@@ -570,23 +568,18 @@ async def cb_handler(client: Client, query: CallbackQuery):
             reply_markup=reply_markup,
             parse_mode=enums.ParseMode.HTML
         )
-    except Exception as e:
-        logger.exception("Error while fetching stats", exc_info=True)
         await query.message.edit_text(
             text="An error occurred while fetching database statistics. Please try again later.",
             reply_markup=reply_markup,
             parse_mode=enums.ParseMode.HTML
-        )
-        
-    elif query.data == "stats":
+        )  
+    elif query.data == "rfrsh":
     # Buttons
-    buttons = [[
+        buttons = [[
             InlineKeyboardButton('👩‍🦯 Back', callback_data='help'),
             InlineKeyboardButton('♻️ Refresh', callback_data='rfrsh')
-    ]]
-    reply_markup = InlineKeyboardMarkup(buttons)
-
-    try:
+        ]]
+        reply_markup = InlineKeyboardMarkup(buttons)
         # Primary DB
         total_primary = await Media.count_documents()
         stats_primary = await clientDB.command('dbStats')
@@ -628,8 +621,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
             reply_markup=reply_markup,
             parse_mode=enums.ParseMode.HTML
         )
-    except Exception as e:
-        logger.exception("Error while fetching stats", exc_info=True)
         await query.message.edit_text(
             text="An error occurred while fetching database statistics. Please try again later.",
             reply_markup=reply_markup,
