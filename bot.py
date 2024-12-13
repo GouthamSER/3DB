@@ -9,9 +9,9 @@ logging.getLogger("imdbpy").setLevel(logging.ERROR)
 
 from pyrogram import Client, __version__
 from pyrogram.raw.all import layer
-from database.ia_filterdb import Media, Media2, choose_mediaDB, db as clientDB
+from database.ia_filterdb import Media, Media2, Media3, choose_mediaDB, db as clientDB
 from database.users_chats_db import db
-from info import SESSION, API_ID, API_HASH, BOT_TOKEN, LOG_STR, LOG_CHANNEL, SECONDDB_URI
+from info import SESSION, API_ID, API_HASH, BOT_TOKEN, LOG_STR, LOG_CHANNEL, SECONDDB_URI, THIRDDB_URI
 from utils import temp
 from typing import Union, Optional, AsyncGenerator
 from pyrogram import types
@@ -32,17 +32,6 @@ PORT_CODE = environ.get("PORT", "8080")
 
 class Bot(Client):
 
-    def __init__(self):
-        super().__init__(
-            name=SESSION,
-            api_id=API_ID,
-            api_hash=API_HASH,
-            bot_token=BOT_TOKEN,
-            workers=50,
-            plugins={"root": "plugins"},
-            sleep_threshold=5,
-        )
-
     async def start(self):
         b_users, b_chats = await db.get_banned()
         temp.BANNED_USERS = b_users
@@ -50,34 +39,55 @@ class Bot(Client):
         await super().start()
         await Media.ensure_indexes()
         await Media2.ensure_indexes()
-        #choose the right db by checking the free space
+        await Media3.ensure_indexes()
+        
+        # Choose the appropriate DB based on available space
         stats = await clientDB.command('dbStats')
-        #calculating the free db space from bytes to MB
-        free_dbSize = round(512-((stats['dataSize']/(1024*1024))+(stats['indexSize']/(1024*1024))), 2)
-        if SECONDDB_URI and free_dbSize<10: #if the primary db have less than 10MB left, use second DB.
-            tempDict["indexDB"] = SECONDDB_URI
-            logging.info(f"Since Primary DB have only {free_dbSize} MB left, Secondary DB will be used to store datas.")
-        elif SECONDDB_URI is None:
-            logging.error("Missing second DB URI !\n\nAdd SECONDDB_URI now !\n\nExiting...")
+        free_dbSize = round(512 - ((stats['dataSize'] / (1024 * 1024)) + (stats['indexSize'] / (1024 * 1024))), 2)
+        
+        if SECONDDB_URI and free_dbSize < 10:
+            # Check free space in SECONDDB
+            second_db_client = ClientDB(SECONDDB_URI)
+            second_db_stats = await second_db_client.command('dbStats')
+            second_free_dbSize = round(512 - ((second_db_stats['dataSize'] / (1024 * 1024)) + 
+                                              (second_db_stats['indexSize'] / (1024 * 1024))), 2)
+                                              
+            if THIRDDB_URI and second_free_dbSize < 10:
+                tempDict["indexDB"] = THIRDDB_URI
+                logging.info(f"Both Primary and Secondary DBs have less than 10MB free. Using Third DB.")
+            elif not THIRDDB_URI:
+                logging.error("Third DB URI missing!\n\nAdd THIRDDB_URI now!\n\nExiting...")
+                exit()
+            else:
+                tempDict["indexDB"] = SECONDDB_URI
+                logging.info(f"Primary DB is low on space. Using Secondary DB with {second_free_dbSize} MB free.")
+        
+        elif SECONDDB_URI is None and THIRDDB_URI is not None and free_dbSize < 10:
+            tempDict["indexDB"] = THIRDDB_URI
+            logging.info(f"Primary DB is low on space, and Secondary DB is unavailable. Using Third DB.")
+        
+        elif SECONDDB_URI is None and THIRDDB_URI is None:
+            logging.error("Both Secondary and Third DB URIs are missing! Exiting...")
             exit()
+        
         else:
-            logging.info(f"Since primary DB have enough space ({free_dbSize}MB) left, It will be used for storing datas.")
+            logging.info(f"Primary DB has enough space ({free_dbSize}MB). Using it for data storage.")
+        
         await choose_mediaDB()
         me = await self.get_me()
         temp.ME = me.id
         temp.U_NAME = me.username
         temp.B_NAME = me.first_name
         self.username = '@' + me.username
-        logging.info(f"{me.first_name} with for Pyrogram v{__version__} (Layer {layer}) started on {me.username}.")
+        logging.info(f"{me.first_name} with Pyrogram v{__version__} (Layer {layer}) started as {me.username}.")
         logging.info(LOG_STR)
-        await self.send_message(chat_id=LOG_CHANNEL,text="Restart Successfully ✓\nKuttu Bot 2 💫")
-        print("Og Eva Re-editeD ⚡")
+        await self.send_message(chat_id=LOG_CHANNEL, text="Restart Successfully ✓\nKuttu Bot 2 💫")
+        print("Og Eva Re-editeD ⚡\n3db Gooyz beTa testings")
 
         client = webserver.AppRunner(await bot_run())
         await client.setup()
         bind_address = "0.0.0.0"
-        await webserver.TCPSite(client, bind_address,
-        PORT_CODE).start()
+        await webserver.TCPSite(client, bind_address, PORT_CODE).start()
 
     async def stop(self, *args):
         await super().stop()
